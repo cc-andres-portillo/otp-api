@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/cc-andres-portillo/otp-api/services"
 )
@@ -57,7 +58,13 @@ func GetMockToken(c *gin.Context) {
 		return
 	}
 
-	token, err := totp.GenerateCode(req.Secret, time.Now())
+	// Generar token válido para 90 segundos
+	token, err := totp.GenerateCodeCustom(req.Secret, time.Now(), totp.ValidateOpts{
+		Period:    90,
+		Skew:      0,
+		Digits:    otp.DigitsSix,         // ← Usar otp.DigitsSix
+		Algorithm: otp.AlgorithmSHA1,     // ← Usar otp.AlgorithmSHA1
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return

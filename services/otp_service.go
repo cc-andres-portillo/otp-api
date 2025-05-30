@@ -2,22 +2,25 @@ package services
 
 import (
 	"encoding/base64"
+	"time"
 
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/cc-andres-portillo/otp-api/utils"
 )
 
 type OTPResult struct {
-	Secret          string   `json:"secret"`
-	OTPAuthURL      string   `json:"otpauth_url"`
-	QRCodeBase64    string   `json:"qr_code_base64"`
-	RecoveryCodes   []string `json:"recovery_codes"`
+	Secret        string   `json:"secret"`
+	OTPAuthURL    string   `json:"otpauth_url"`
+	QRCodeBase64  string   `json:"qr_code_base64"`
+	RecoveryCodes []string `json:"recovery_codes"`
 }
 
 func GenerateOTP(username, issuer string) (*OTPResult, error) {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
 		AccountName: username,
+		Period:      90, // ← ⚠️ Tiempo de expiración del token en segundos
 	})
 	if err != nil {
 		return nil, err
@@ -30,7 +33,7 @@ func GenerateOTP(username, issuer string) (*OTPResult, error) {
 	}
 	qrBase64 := base64.StdEncoding.EncodeToString(qrBytes)
 
-	// Generar códigos de recuperación (5)
+	// Generar códigos de recuperación
 	recovery := utils.GenerateRecoveryCodes(5)
 
 	return &OTPResult{
@@ -42,6 +45,18 @@ func GenerateOTP(username, issuer string) (*OTPResult, error) {
 }
 
 func ValidateOTP(secret, token string) bool {
-	valid := totp.Validate(token, secret)
+	// Usar la misma configuración para validar el OTP generado con Period=90
+	valid, err := totp.ValidateCustom(token, secret, time.Now(), totp.ValidateOpts{
+		Period:    90,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+
+	// Si hay error, el token no es válido
+	if err != nil {
+		return false
+	}
+
 	return valid
 }
