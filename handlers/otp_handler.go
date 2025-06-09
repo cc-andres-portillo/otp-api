@@ -23,8 +23,9 @@ type VerifyRequest struct {
 }
 
 type QRResponse struct {
-	Secret string `json:"secret"`
-	QR     string `json:"qr"`
+	Secret   string   `json:"secret"`
+	QR       string   `json:"qr"`
+	Recovery []string `json:"recovery"`
 }
 
 type ErrorResponse struct {
@@ -88,17 +89,17 @@ func Setup2FAHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Error generando clave OTP")
 		return
 	}
-
-	if err := services.CreateOrUpdateOTPSecret(userID, key.Secret(), req.Issuer); err != nil {
+	recoveryCodes, err := services.CreateOrUpdateOTPSecret(userID, key.Secret(), req.Issuer)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error guardando el secreto")
 		return
 	}
 
 	resp := QRResponse{
-		Secret: key.Secret(),
-		QR:     key.URL(),
+		Secret:   key.Secret(),
+		QR:       key.URL(),
+		Recovery: recoveryCodes,
 	}
-
 	writeJSON(w, http.StatusOK, resp)
 }
 
