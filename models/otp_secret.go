@@ -8,4 +8,5 @@ type OTPSecret struct {
 	Issuer    string    `bson:"issuer"`
 	CreatedAt int64     `bson:"createdAt"`
 	UpdatedAt int64     `bson:"updatedAt"`
+	Recovery  []string  `bson:"recoveryCodes"`
 }
