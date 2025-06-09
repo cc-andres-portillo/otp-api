@@ -10,23 +10,26 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"github.com/pquerna/otp/totp"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/google/uuid"
 )
 
-func CreateOrUpdateOTPSecret(userID string, secret string) error {
+func CreateOrUpdateOTPSecret(userID string, secret string, issuer string) error {
 	coll := db.GetCollection("otp_secrets")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	now := time.Now().Unix()
 
-	filter := bson.M{"userId": userID}
+	filter := bson.M{"userId": userID, "issuer": issuer}
 	update := bson.M{
 		"$set": bson.M{
 			"secret":    secret,
 			"updatedAt": now,
 		},
 		"$setOnInsert": bson.M{
+			"_id":       uuid.New().String(),
 			"userId":    userID,
+			"issuer":	 issuer,
 			"createdAt": now,
 		},
 	}
