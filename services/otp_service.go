@@ -54,3 +54,40 @@ func GetOTPSecretByUserID(userID string) (string, error) {
 func ValidateOTP(secret string, token string) bool {
 	return totp.Validate(token, secret)
 }
+
+func UseRecoveryCode(userID, code string) (bool, error) {
+	coll := db.GetCollection("otp_secrets")
+
+	var result models.OTPSecret
+	err := coll.FindOne(context.TODO(), bson.M{"userID": userID}).Decode(&result)
+	if err != nil {
+		return false, err
+	}
+
+	// Buscar el código
+	var newCodes []string
+	found := false
+	for _, c := range result.Recovery {
+		if c == code {
+			found = true
+		} else {
+			newCodes = append(newCodes, c)
+		}
+	}
+
+	if !found {
+		return false, nil
+	}
+
+	// Eliminar el código usado
+	_, err = coll.UpdateOne(
+		context.TODO(),
+		bson.M{"userID": userID},
+		bson.M{"$set": bson.M{"recoveryCodes": newCodes}},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
