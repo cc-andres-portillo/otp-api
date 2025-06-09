@@ -1,16 +1,19 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+
+	"github.com/cc-andres-portillo/otp-api/db"
 	"github.com/cc-andres-portillo/otp-api/handlers"
 )
 
 func main() {
-	r := gin.Default()
+	db.ConnectMongo()
 
-	r.POST("/otp/generate", handlers.GenerateOTP)
-	r.POST("/otp/validate", handlers.ValidateOTP)
-	r.POST("/otp/mock-token", handlers.GetMockToken)
+	http.HandleFunc("/2fa/setup", handlers.Setup2FAHandler)
+	http.HandleFunc("/2fa/verify", handlers.Verify2FAHandler)
 
-	r.Run(":8080") // http://localhost:8080
+	log.Println("API corriendo en http://localhost:8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }

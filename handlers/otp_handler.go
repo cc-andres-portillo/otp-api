@@ -1,74 +1,111 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
-	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/pquerna/otp"
-	"github.com/pquerna/otp/totp"
+	"github.com/cc-andres-portillo/otp-api/db"
 	"github.com/cc-andres-portillo/otp-api/services"
+	"github.com/pquerna/otp/totp"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
-type GenerateRequest struct {
-	Username string `json:"username" binding:"required"`
-	Issuer   string `json:"issuer" binding:"required"`
+type SetupRequest struct {
+	Email string `json:"email"`
 }
 
-type ValidateRequest struct {
-	Token   string `json:"token" binding:"required"`
-	Secret  string `json:"secret" binding:"required"`
+type VerifyRequest struct {
+	Email string `json:"email"`
+	Token string `json:"token"`
 }
 
-func GenerateOTP(c *gin.Context) {
-	var req GenerateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
-		return
-	}
+type QRResponse struct {
+	Secret string `json:"secret"`
+	QR     string `json:"qr"`
+}
 
-	result, err := services.GenerateOTP(req.Username, req.Issuer)
+func Setup2FAHandler(w http.ResponseWriter, r *http.Request) {
+	var req SetupRequest
+	json.NewDecoder(r.Body).Decode(&req)
+
+	coll := db.GetCollection("profile")
+	filter := bson.M{"email": req.Email}
+	var user bson.M
+
+	err := coll.FindOne(r.Context(), filter).Decode(&user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate OTP"})
+		http.Error(w, "Usuario no encontrado", http.StatusNotFound)
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
-}
-
-func ValidateOTP(c *gin.Context) {
-	var req ValidateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	userID, ok := user["_id"].(string)
+	if !ok {
+		http.Error(w, "ID de usuario inválido (esperado string)", http.StatusInternalServerError)
 		return
 	}
 
-	valid := services.ValidateOTP(req.Secret, req.Token)
-	c.JSON(http.StatusOK, gin.H{"valid": valid})
-}
-
-func GetMockToken(c *gin.Context) {
-	type Request struct {
-		Secret string `json:"secret"`
-	}
-
-	var req Request
-	if err := c.ShouldBindJSON(&req); err != nil || req.Secret == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing secret"})
-		return
-	}
-
-	// Generar token válido para 90 segundos
-	token, err := totp.GenerateCodeCustom(req.Secret, time.Now(), totp.ValidateOpts{
-		Period:    90,
-		Skew:      0,
-		Digits:    otp.DigitsSix,         // ← Usar otp.DigitsSix
-		Algorithm: otp.AlgorithmSHA1,     // ← Usar otp.AlgorithmSHA1
+	key, _ := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Futurapps",
+		AccountName: req.Email,
 	})
+
+	err = services.CreateOrUpdateOTPSecret(userID, key.Secret())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		http.Error(w, "Error guardando el secreto", http.StatusInternalServerError)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": token})
+	resp := QRResponse{
+		Secret: key.Secret(),
+		QR:     key.URL(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func Verify2FAHandler(w http.ResponseWriter, r *http.Request) {
+	var req VerifyRequest
+	json.NewDecoder(r.Body).Decode(&req)
+
+	coll := db.GetCollection("profile")
+	filter := bson.M{"email": req.Email, "is2FAEnabled": true}
+	var user bson.M
+
+	err := coll.FindOne(r.Context(), filter).Decode(&user)
+	if err != nil {
+		http.Error(w, "Usuario no encontrado", http.StatusNotFound)
+		return
+	}
+
+	userID, ok := user["_id"].(string)
+	if !ok {
+		http.Error(w, "ID de usuario inválido (esperado string)", http.StatusInternalServerError)
+		return
+	}
+
+	secret, err := services.GetOTPSecretByUserID(userID)
+	if err != nil {
+		http.Error(w, "2FA no configurado", http.StatusUnauthorized)
+		return
+	}
+
+	if !services.ValidateOTP(secret, req.Token) {
+		http.Error(w, "Token inválido", http.StatusUnauthorized)
+		return
+	}
+	userAvaible2Fa := user["is2FAEnabled"].(bool)
+	if userAvaible2Fa == true {
+		w.Write([]byte("Token válido"))
+		return
+	}
+	// Habilita 2FA en el perfil del usuario
+	update := bson.M{"$set": bson.M{"is2FAEnabled": true}}
+	_, err = coll.UpdateOne(r.Context(), bson.M{"_id": userID}, update)
+	if err != nil {
+		http.Error(w, "Error actualizando el perfil del usuario", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte("Token válido y 2FA habilitado"))
 }
