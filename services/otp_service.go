@@ -18,16 +18,20 @@ func CreateOrUpdateOTPSecret(userID, secret, issuer string) ([]string, error) {
 	coll := db.GetCollection("otp_secrets")
 	recoveryCodes := utils.GenerateRecoveryCodes(5)
 
-	otpSecret := models.OTPSecret{
-		ID: 	  uuid.New().String(),
-		UserID:   userID,
-		Secret:   secret,
-		Issuer:   issuer,
-		Recovery: recoveryCodes,
-	}
+	newID := uuid.New().String()
 
-	filter := bson.M{"userID": userID}
-	update := bson.M{"$set": otpSecret}
+	filter := bson.M{"userID": userID, "issuer": issuer}
+	update := bson.M{
+		"$set": bson.M{
+			"userID":   userID,
+			"secret":   secret,
+			"issuer":   issuer,
+			"recoveryCodes": recoveryCodes,
+		},
+		"$setOnInsert": bson.M{
+			"_id": newID, 
+		},
+	}
 	opts := options.Update().SetUpsert(true)
 
 	_, err := coll.UpdateOne(context.TODO(), filter, update, opts)
