@@ -9,10 +9,12 @@ import (
 )
 
 func main() {
-	db.ConnectMongo()
+	db.ConnectMongo("mongodb://root:12345abc@localhost:27017/?directConnection=true&authMechanism=SCRAM-SHA-1&authSource=admin", "futurapps")
 
-	http.HandleFunc("/2fa/setup", handlers.Setup2FAHandler)
-	http.HandleFunc("/2fa/verify", handlers.Verify2FAHandler)
+	http.HandleFunc("POST /2fa/setup", handlers.Setup2FAHandler)
+	http.HandleFunc("POST /2fa/verify", handlers.Verify2FAHandler)
+	http.HandleFunc("POST /2fa/recovery-codes", handlers.GetRecoveryCodes)
+	http.HandleFunc("POST /2fa/generate-recovery-codes", handlers.FA2GenerateRecoveryCodes)
 
 	log.Println("API corriendo en http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

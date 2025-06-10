@@ -8,28 +8,28 @@ import (
 	"github.com/cc-andres-portillo/otp-api/models"
 	"github.com/cc-andres-portillo/otp-api/utils"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"github.com/pquerna/otp/totp"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"github.com/google/uuid"
+	"github.com/pquerna/otp/totp"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func CreateOrUpdateOTPSecret(userID, secret, issuer string) ([]string, error) {
 	coll := db.GetCollection("otp_secrets")
-	recoveryCodes := utils.GenerateRecoveryCodes(5)
+	recoveryCodes := utils.GenerateRecoveryCodes(10)
 
 	newID := uuid.New().String()
 
-	filter := bson.M{"userID": userID, "issuer": issuer}
+	filter := bson.M{"userId": userID, "issuer": issuer}
 	update := bson.M{
 		"$set": bson.M{
-			"userID":   userID,
-			"secret":   secret,
-			"issuer":   issuer,
+			"userId":        userID,
+			"secret":        secret,
+			"issuer":        issuer,
 			"recoveryCodes": recoveryCodes,
 		},
 		"$setOnInsert": bson.M{
-			"_id": newID, 
+			"_id": newID,
 		},
 	}
 	opts := options.Update().SetUpsert(true)
@@ -42,7 +42,7 @@ func CreateOrUpdateOTPSecret(userID, secret, issuer string) ([]string, error) {
 	return recoveryCodes, nil
 }
 
-func GetOTPSecretByUserID(userID string) (string, error) {
+func GetOTPByUserID(userID string) (models.OTPSecret, error) {
 	coll := db.GetCollection("otp_secrets")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -50,12 +50,12 @@ func GetOTPSecretByUserID(userID string) (string, error) {
 	var result models.OTPSecret
 	err := coll.FindOne(ctx, bson.M{"userId": userID}).Decode(&result)
 	if err != nil {
-		return "", err
+		return models.OTPSecret{}, err
 	}
-	return result.Secret, nil
+	return result, nil
 }
 
-func ValidateOTP(secret string, token string) bool {
+func ValidateOTP(secret, token string) bool {
 	return totp.Validate(token, secret)
 }
 

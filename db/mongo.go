@@ -9,20 +9,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var Client *mongo.Client
-var DB *mongo.Database
+var (
+	Client *mongo.Client
+	DB     *mongo.Database
+)
 
-func ConnectMongo() {
+func ConnectMongo(uri, dbname string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	clientOptions := options.Client().ApplyURI("mongodb://root:12345abc@localhost:27017/?directConnection=true&authMechanism=SCRAM-SHA-1&authSource=admin")
+	clientOptions := options.Client().ApplyURI(uri)
 	var err error
 	Client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		log.Fatal("Error conectando a MongoDB:", err)
 	}
-	DB = Client.Database("futurapps")
+	DB = Client.Database(dbname)
 	log.Println("Conectado a MongoDB")
 }
 
