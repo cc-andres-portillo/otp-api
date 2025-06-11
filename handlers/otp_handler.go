@@ -100,6 +100,7 @@ func Setup2FAHandler(w http.ResponseWriter, r *http.Request) {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      req.Issuer,
 		AccountName: identifier,
+		Period:      30,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error generando clave OTP")
@@ -137,13 +138,13 @@ func Verify2FAHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret, err := services.GetOTPSecretByUserID(userID)
+	otp, err := services.GetOTPByUserID(userID)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "2FA no configurado")
 		return
 	}
 
-	if !services.ValidateOTP(secret, req.Token) {
+	if !services.ValidateOTP(otp.Secret, req.Token) {
 		// Intentar con recovery code
 		ok, err := services.UseRecoveryCode(userID, req.Token)
 		if err != nil {
@@ -176,4 +177,43 @@ func Verify2FAHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Token válido y 2FA habilitado"})
+}
+
+func GetRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string
+		Email    string
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	if req.Email == "" && req.Username == "" {
+		writeError(w, http.StatusBadRequest, "Email o username son requeridos")
+		return
+	}
+
+	userID, user, err := getUserByEmailOrUsername(r.Context(), req.Email, req.Username)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Usuario no encontrado")
+		return
+	}
+
+	userHas2FA, ok := user["is2FAEnabled"].(bool)
+	if ok && !userHas2FA {
+		writeJSON(w, http.StatusOK, map[string]string{"message": "2FA disabled"})
+		return
+	}
+
+	otp, err := services.GetOTPByUserID(userID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "2FA no configurado")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, otp.Recovery)
+}
+
+func FA2GenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, struct{}{})
 }
