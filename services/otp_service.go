@@ -9,23 +9,31 @@ import (
 	"github.com/cc-andres-portillo/otp-api/utils"
 
 	"github.com/google/uuid"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func CreateOrUpdateOTPSecret(userID, secret, issuer string) ([]string, error) {
+type OTPSecretData struct {
+	UserID string
+	Secret string
+	Issuer string
+}
+
+// Crea o actualiza un secreto OTP con nuevos códigos de recuperación
+func CreateOrUpdateOTPSecret(data OTPSecretData) ([]string, error) {
 	coll := db.GetCollection("otp_secrets")
 	recoveryCodes := utils.GenerateRecoveryCodes(10)
 
 	newID := uuid.New().String()
 
-	filter := bson.M{"userId": userID, "issuer": issuer}
+	filter := bson.M{"userId":  data.UserID, "issuer": data.Issuer}
 	update := bson.M{
 		"$set": bson.M{
-			"userId":        userID,
-			"secret":        secret,
-			"issuer":        issuer,
+			"userId":        data.UserID,
+			"secret":        data.Secret,
+			"issuer":        data.Issuer,
 			"recoveryCodes": recoveryCodes,
 		},
 		"$setOnInsert": bson.M{
@@ -42,6 +50,7 @@ func CreateOrUpdateOTPSecret(userID, secret, issuer string) ([]string, error) {
 	return recoveryCodes, nil
 }
 
+// Obtiene el secreto OTP de un usuario
 func GetOTPByUserID(userID string) (models.OTPSecret, error) {
 	coll := db.GetCollection("otp_secrets")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -55,15 +64,23 @@ func GetOTPByUserID(userID string) (models.OTPSecret, error) {
 	return result, nil
 }
 
+// Valida el token TOTP con expiración estricta
 func ValidateOTP(secret, token string) bool {
-	return totp.Validate(token, secret)
+	valid, err := totp.ValidateCustom(token, secret, time.Now().UTC(), totp.ValidateOpts{
+		Period:    30,
+		Skew:      0,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+	return err == nil && valid
 }
 
+// Verifica y marca como usado un código de recuperación
 func UseRecoveryCode(userID, code string) (bool, error) {
 	coll := db.GetCollection("otp_secrets")
 
 	var result models.OTPSecret
-	err := coll.FindOne(context.TODO(), bson.M{"userID": userID}).Decode(&result)
+	err := coll.FindOne(context.TODO(), bson.M{"userId": userID}).Decode(&result)
 	if err != nil {
 		return false, err
 	}
@@ -86,7 +103,7 @@ func UseRecoveryCode(userID, code string) (bool, error) {
 	// Eliminar el código usado
 	_, err = coll.UpdateOne(
 		context.TODO(),
-		bson.M{"userID": userID},
+		bson.M{"userId": userID},
 		bson.M{"$set": bson.M{"recoveryCodes": newCodes}},
 	)
 	if err != nil {

@@ -107,7 +107,11 @@ func Setup2FAHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recoveryCodes, err := services.CreateOrUpdateOTPSecret(userID, key.Secret(), req.Issuer)
+	recoveryCodes, err := services.CreateOrUpdateOTPSecret(services.OTPSecretData{
+		UserID: userID,
+		Secret: key.Secret(),
+		Issuer: req.Issuer,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error guardando el secreto")
 		return
@@ -145,19 +149,7 @@ func Verify2FAHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !services.ValidateOTP(otp.Secret, req.Token) {
-		// Intentar con recovery code
-		ok, err := services.UseRecoveryCode(userID, req.Token)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Error verificando código de recuperación")
-			return
-		}
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "Token inválido")
-			return
-		}
-
-		// Código de recuperación válido
-		writeJSON(w, http.StatusOK, map[string]string{"message": "Código de recuperación válido"})
+		writeError(w, http.StatusUnauthorized, "Token inválido")
 		return
 	}
 
@@ -177,6 +169,36 @@ func Verify2FAHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Token válido y 2FA habilitado"})
+}
+
+func ValidateRecoveryCodeHandler(w http.ResponseWriter, r *http.Request) {
+	var req VerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	if (req.Email == "" && req.Username == "") || req.Token == "" {
+		writeError(w, http.StatusBadRequest, "Email o username y código son requeridos")
+		return
+	}
+
+	userID, _, err := getUserByEmailOrUsername(r.Context(), req.Email, req.Username)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Usuario no encontrado")
+		return
+	}
+
+	valid, err := services.UseRecoveryCode(userID, req.Token)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Error verificando código de recuperación")
+		return
+	}
+	if !valid {
+		writeError(w, http.StatusUnauthorized, "Código de recuperación inválido")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Código de recuperación válido"})
 }
 
 func GetRecoveryCodes(w http.ResponseWriter, r *http.Request) {
