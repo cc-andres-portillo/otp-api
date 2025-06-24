@@ -36,6 +36,13 @@ type InfoUserRequest struct {
 	Username string `json:"username"`
 }
 
+func (u InfoUserRequest) Valid() error {
+	if u.Email == "" && u.Username == "" {
+		return errors.New("Email o username es requerido")
+	}
+	return nil
+}
+
 type ErrorResponse struct {
 	Message string `json:"message"`
 }
@@ -213,8 +220,9 @@ func GetRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
-	if req.Email == "" && req.Username == "" {
-		writeError(w, http.StatusBadRequest, "Email o username son requeridos")
+
+	if err := req.Valid(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -245,8 +253,9 @@ func FA2GenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
-	if req.Email == "" && req.Username == "" {
-		writeError(w, http.StatusBadRequest, "Email o username requerido")
+
+	if err := req.Valid(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -303,8 +312,9 @@ func Disable2FAHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
-	if req.Email == "" && req.Username == "" {
-		writeError(w, http.StatusBadRequest, "Email o username requerido")
+
+	if err := req.Valid(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
