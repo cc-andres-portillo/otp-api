@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/cc-andres-portillo/otp-api/db"
@@ -28,6 +29,11 @@ type QRResponse struct {
 	Secret   string   `json:"secret"`
 	QR       string   `json:"qr"`
 	Recovery []string `json:"recovery"`
+}
+
+type InfoUserRequest struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }
 
 type ErrorResponse struct {
@@ -202,10 +208,7 @@ func ValidateRecoveryCodeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetRecoveryCodes(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Username string
-		Email    string
-	}
+	var req InfoUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
@@ -237,5 +240,100 @@ func GetRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func FA2GenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, struct{}{})
+	var req InfoUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	if req.Email == "" && req.Username == "" {
+		writeError(w, http.StatusBadRequest, "Email o username requerido")
+		return
+	}
+
+	userID, user, err := getUserByEmailOrUsername(r.Context(), req.Email, req.Username)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Usuario no encontrado")
+		return
+	}
+
+	userHas2FA, ok := user["is2FAEnabled"].(bool)
+	if !ok || !userHas2FA {
+		writeError(w, http.StatusBadRequest, "2FA no está habilitado para este usuario")
+		return
+	}
+
+	// Obtener el secreto actual
+	otpData, err := services.GetOTPByUserID(userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Error obteniendo secreto 2FA")
+		return
+	}
+
+	// Generar nuevos códigos y actualizar en DB
+	recoveryCodes, err := services.CreateOrUpdateOTPSecret(services.OTPSecretData{
+		UserID: userID,
+		Secret: otpData.Secret,
+		Issuer: otpData.Issuer,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Error generando nuevos códigos de recuperación")
+		return
+	}
+
+	// Obtener IP remota
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = forwarded
+	}
+
+	// Log informativo
+	log.Printf("Usuario %s generó nuevos códigos de recuperación desde IP %s", userID, ip)
+
+	// TODO: Enviar notificación al usuario por email/sistema interno si es necesario
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":        "Nuevos códigos de recuperación generados exitosamente",
+		"recovery_codes": recoveryCodes,
+	})
+}
+
+func Disable2FAHandler(w http.ResponseWriter, r *http.Request) {
+	var req InfoUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+	if req.Email == "" && req.Username == "" {
+		writeError(w, http.StatusBadRequest, "Email o username requerido")
+		return
+	}
+
+	userID, _, err := getUserByEmailOrUsername(r.Context(), req.Email, req.Username)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Usuario no encontrado")
+		return
+	}
+
+	// Eliminar secreto OTP
+	if err := services.DeleteOTPByUserID(userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Error eliminando datos OTP")
+		return
+	}
+
+	// Actualizar campo is2FAEnabled a false
+	if err := services.Update2FAStatus(userID, false); err != nil {
+		writeError(w, http.StatusInternalServerError, "Error desactivando 2FA")
+		return
+	}
+
+	// Log de auditoría
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = forwarded
+	}
+	log.Printf("Usuario %s desactivó 2FA desde IP %s", userID, ip)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message": "Autenticación en dos pasos desactivada correctamente",
+	})
 }

@@ -9,4 +9,5 @@ type OTPSecret struct {
 	CreatedAt int64    `bson:"createdAt"`
 	UpdatedAt int64    `bson:"updatedAt"`
 	Recovery  []string `bson:"recoveryCodes"`
+	IsRemoved bool     `bson:"isRemove"`
 }

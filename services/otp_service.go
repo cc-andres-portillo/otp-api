@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/cc-andres-portillo/otp-api/db"
@@ -12,6 +13,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -21,43 +23,62 @@ type OTPSecretData struct {
 	Issuer string
 }
 
+// Funciones para acceder a las colecciones
+func otpSecretsCollection() *mongo.Collection {
+	return db.GetCollection("otp_secrets")
+}
+
+func profileCollection() *mongo.Collection {
+	return db.GetCollection("profile")
+}
+
 // Crea o actualiza un secreto OTP con nuevos códigos de recuperación
 func CreateOrUpdateOTPSecret(data OTPSecretData) ([]string, error) {
-	coll := db.GetCollection("otp_secrets")
+	if data.UserID == "" || data.Secret == "" || data.Issuer == "" {
+		return nil, errors.New("CreateOrUpdateOTPSecret: userID, secret o issuer vacíos")
+	}
+
 	recoveryCodes := utils.GenerateRecoveryCodes(10)
+	now := time.Now().Unix()
+	newID := uuid.NewString()
 
-	newID := uuid.New().String()
-
-	filter := bson.M{"userId":  data.UserID, "issuer": data.Issuer}
+	filter := bson.M{"userId": data.UserID, "issuer": data.Issuer}
 	update := bson.M{
 		"$set": bson.M{
-			"userId":        data.UserID,
 			"secret":        data.Secret,
-			"issuer":        data.Issuer,
 			"recoveryCodes": recoveryCodes,
+			"updatedAt":     now,
+			"isRemove":      false,
 		},
 		"$setOnInsert": bson.M{
-			"_id": newID,
+			"_id":       newID,
+			"userId":    data.UserID,
+			"issuer":    data.Issuer,
+			"createdAt": now,
 		},
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	opts := options.Update().SetUpsert(true)
 
-	_, err := coll.UpdateOne(context.TODO(), filter, update, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return recoveryCodes, nil
+	_, err := otpSecretsCollection().UpdateOne(ctx, filter, update, opts)
+	return recoveryCodes, err
 }
 
 // Obtiene el secreto OTP de un usuario
 func GetOTPByUserID(userID string) (models.OTPSecret, error) {
-	coll := db.GetCollection("otp_secrets")
+	if userID == "" {
+		return models.OTPSecret{}, errors.New("GetOTPByUserID: userID no proporcionado")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var result models.OTPSecret
-	err := coll.FindOne(ctx, bson.M{"userId": userID}).Decode(&result)
+	err := otpSecretsCollection().FindOne(ctx, bson.M{
+		"userId":   userID,
+		"isRemove": false,
+	}).Decode(&result)
 	if err != nil {
 		return models.OTPSecret{}, err
 	}
@@ -77,10 +98,18 @@ func ValidateOTP(secret, token string) bool {
 
 // Verifica y marca como usado un código de recuperación
 func UseRecoveryCode(userID, code string) (bool, error) {
-	coll := db.GetCollection("otp_secrets")
+	if userID == "" {
+		return false, errors.New("UseRecoveryCode: userID no proporcionado")
+	}
+	if code == "" {
+		return false, errors.New("UseRecoveryCode: código vacío")
+	}
 
 	var result models.OTPSecret
-	err := coll.FindOne(context.TODO(), bson.M{"userId": userID}).Decode(&result)
+	err := otpSecretsCollection().FindOne(context.TODO(), bson.M{
+		"userId":   userID,
+		"isRemove": false,
+	}).Decode(&result)
 	if err != nil {
 		return false, err
 	}
@@ -101,7 +130,7 @@ func UseRecoveryCode(userID, code string) (bool, error) {
 	}
 
 	// Eliminar el código usado
-	_, err = coll.UpdateOne(
+	_, err = otpSecretsCollection().UpdateOne(
 		context.TODO(),
 		bson.M{"userId": userID},
 		bson.M{"$set": bson.M{"recoveryCodes": newCodes}},
@@ -111,4 +140,36 @@ func UseRecoveryCode(userID, code string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// Marca el registro como eliminado
+func DeleteOTPByUserID(userID string) error {
+	if userID == "" {
+		return errors.New("DeleteOTPByUserID: userID no proporcionado")
+	}
+
+	filter := bson.M{"userId": userID}
+	update := bson.M{"$set": bson.M{"isRemove": true}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := otpSecretsCollection().UpdateOne(ctx, filter, update)
+	return err
+}
+
+// Actualiza el estado de 2FA en el perfil
+func Update2FAStatus(userID string, enabled bool) error {
+	if userID == "" {
+		return errors.New("Update2FAStatus: userID no proporcionado")
+	}
+
+	filter := bson.M{"_id": userID}
+	update := bson.M{"$set": bson.M{"is2FAEnabled": enabled}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := profileCollection().UpdateOne(ctx, filter, update)
+	return err
 }

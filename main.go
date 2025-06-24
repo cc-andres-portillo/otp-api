@@ -16,6 +16,7 @@ func main() {
 	http.HandleFunc("POST /2fa/recovery-codes", handlers.GetRecoveryCodes)
 	http.HandleFunc("POST /2fa/generate-recovery-codes", handlers.FA2GenerateRecoveryCodes)
 	http.HandleFunc("POST /2fa/validate-recovery-code", handlers.ValidateRecoveryCodeHandler)
+	http.HandleFunc("POST /2fa/disable", handlers.Disable2FAHandler)
 
 	log.Println("API corriendo en http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
