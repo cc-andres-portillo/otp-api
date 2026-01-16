@@ -7,8 +7,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/cc-andres-portillo/otp-api/db"
-	"github.com/cc-andres-portillo/otp-api/services"
+	"github.com/cc-andres-portillo/otp-api/internal/db"
+	"github.com/cc-andres-portillo/otp-api/internal/legacy/services"
 	"github.com/pquerna/otp/totp"
 	"go.mongodb.org/mongo-driver/bson"
 )

@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/cc-andres-portillo/otp-api/db"
-	"github.com/cc-andres-portillo/otp-api/handlers"
+	"github.com/cc-andres-portillo/otp-api/internal/db"
+	"github.com/cc-andres-portillo/otp-api/internal/legacy/handlers"
 )
 
 func main() {

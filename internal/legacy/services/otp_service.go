@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cc-andres-portillo/otp-api/db"
-	"github.com/cc-andres-portillo/otp-api/models"
-	"github.com/cc-andres-portillo/otp-api/utils"
+	"github.com/cc-andres-portillo/otp-api/internal/db"
+	"github.com/cc-andres-portillo/otp-api/internal/legacy/models"
+	"github.com/cc-andres-portillo/otp-api/internal/legacy/utils"
 
 	"github.com/google/uuid"
 	"github.com/pquerna/otp"
