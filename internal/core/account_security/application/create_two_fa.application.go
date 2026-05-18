@@ -3,7 +3,7 @@ package account_security_applications
 import "context"
 
 func (app *Application) CreateTwoFA(ctx context.Context, userId, identifier, issuer string) (string, string, []byte, error) {
-	secret, qrUrl, qrImg, err := app.OTPAdapter.Config2fa(issuer, identifier)
+	secret, qrUrl, qrImg, err := app.OTPAdapter.Config(issuer, identifier)
 	if err != nil {
 		return "", "", []byte{}, err
 	}

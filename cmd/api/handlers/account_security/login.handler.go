@@ -3,49 +3,36 @@ package account_security_handlers
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"time"
 )
 
-type LoginBody struct {
+type loginBody struct {
 	Email string `json:"email"`
 }
 
-func (l *LoginBody) Validate() error {
+func (l loginBody) Validate() error {
 	if l.Email == "" {
 		return errors.New("EMAIL_IS_REQUIRED")
 	}
 	return nil
 }
 
-func (l *LoginBody) DecodeBody(body io.ReadCloser) error {
-	if err := json.NewDecoder(body).Decode(l); err != nil {
-		return errors.New("JSON inválido")
+func (h *accountSecurityHandler) Login(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var body loginBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
 	}
 
-	return nil
-}
-
-func (h *accountSecurityHandler) Login(w http.ResponseWriter, r *http.Request) {
-	req := LoginBody{}
-
-	req.DecodeBody(r.Body)
-
-	fmt.Println(req)
-
-	// var req LoginBody
-	// if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-	// 	writeError(w, http.StatusBadRequest, "JSON inválido")
-	// 	return
-	// }
-	if err := req.Validate(); err != nil {
+	if err := body.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	user, err := h.UserApplication.GetByEmail(r.Context(), req.Email)
+	user, err := h.UserApplication.GetByEmail(r.Context(), body.Email)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Usuario no encontrado")
 		return

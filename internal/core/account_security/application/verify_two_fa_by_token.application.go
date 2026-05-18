@@ -16,7 +16,7 @@ func (app *Application) VerifyTwoFAByToken(ctx context.Context, userId, token st
 
 	fmt.Println(security)
 
-	if !app.OTPAdapter.ValidateOTP(security.OTP.Secret, token) {
+	if !app.OTPAdapter.Validate(security.OTP.Secret, token) {
 		return nil, errors.New("INVALID_TOKEN")
 	}
 

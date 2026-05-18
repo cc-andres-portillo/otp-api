@@ -19,7 +19,7 @@ import (
 func main() {
 	db.ConnectMongo("mongodb://root:12345abc@localhost:27017/?directConnection=true&authMechanism=SCRAM-SHA-1&authSource=admin", "futurapps")
 
-	otp_adapter := auth_security_libs.NewOptAdapter(30)
+	otp_adapter := auth_security_libs.New(30)
 	account_security_repository := &account_security_mongocc.Repository{DB: db.DB}
 	user_repository := &user_repositories.Repository{DB: db.DB}
 
