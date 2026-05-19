@@ -21,6 +21,10 @@ var (
 	}
 )
 
+// Secret base32 fijo y conocido: hace 100% deterministas los tests que comparan
+// códigos entre períodos distintos (sin depender del secret aleatorio de Config).
+const testSecret = "JBSWY3DPEHPK3PXP"
+
 func newTestAdapter(t *testing.T) *otpAdapter {
 	t.Helper()
 	a, ok := New(30).(*otpAdapter)
@@ -85,6 +89,8 @@ func TestValidateWindowSkew(t *testing.T) {
 
 	prev, _ := totp.GenerateCodeCustom(cfg.Secret, testBase.Add(-30*time.Second), testOpts)
 	next, _ := totp.GenerateCodeCustom(cfg.Secret, testBase.Add(30*time.Second), testOpts)
+	farPrev, _ := totp.GenerateCodeCustom(cfg.Secret, testBase.Add(-60*time.Second), testOpts)
+	farNext, _ := totp.GenerateCodeCustom(cfg.Secret, testBase.Add(60*time.Second), testOpts)
 	old, _ := totp.GenerateCodeCustom(cfg.Secret, testBase.Add(-90*time.Second), testOpts)
 
 	if !a.validateAt(cfg.Secret, prev, testBase) {
@@ -92,6 +98,12 @@ func TestValidateWindowSkew(t *testing.T) {
 	}
 	if !a.validateAt(cfg.Secret, next, testBase) {
 		t.Error("Skew=1 debe aceptar la ventana siguiente (+30s)")
+	}
+	if a.validateAt(cfg.Secret, farPrev, testBase) {
+		t.Error("Skew=1 debe rechazar 2 ventanas atrás (-60s)")
+	}
+	if a.validateAt(cfg.Secret, farNext, testBase) {
+		t.Error("Skew=1 debe rechazar 2 ventanas adelante (+60s)")
 	}
 	if a.validateAt(cfg.Secret, old, testBase) {
 		t.Error("ventana lejana (-90s) debe rechazarse")
@@ -103,5 +115,73 @@ func TestConfigEmptyArgs(t *testing.T) {
 
 	if _, err := a.Config("", ""); err == nil {
 		t.Error(`Config("", "") debería devolver error`)
+	}
+}
+
+func TestDisableAdapter(t *testing.T) {
+	d := New(0) // period 0 ⇒ otpDisableAdapter
+
+	if d.IsEnabled() {
+		t.Error("New(0).IsEnabled() debería ser false")
+	}
+
+	cfg, err := d.Config("MiApp", "user@mail.com")
+	if err != nil {
+		t.Errorf("disable Config no debería devolver error, got %v", err)
+	}
+	if cfg.Secret != "" || cfg.URL != "" || len(cfg.QRImg) != 0 {
+		t.Errorf("disable Config debería devolver OTPConfig vacío, got %+v", cfg)
+	}
+
+	if d.Validate(testSecret, "123456") {
+		t.Error("disable Validate debería ser siempre false")
+	}
+}
+
+func TestPeriodFromStruct(t *testing.T) {
+	a60, ok := New(60).(*otpAdapter)
+	if !ok {
+		t.Fatalf("New(60) no devolvió *otpAdapter")
+	}
+
+	opts60 := totp.ValidateOpts{
+		Period:    60,
+		Digits:    pquerna_otp.DigitsSix,
+		Algorithm: pquerna_otp.AlgorithmSHA1,
+	}
+	code60, err := totp.GenerateCodeCustom(testSecret, testBase, opts60)
+	if err != nil {
+		t.Fatalf("GenerateCodeCustom (period 60): %v", err)
+	}
+	code30, err := totp.GenerateCodeCustom(testSecret, testBase, testOpts)
+	if err != nil {
+		t.Fatalf("GenerateCodeCustom (period 30): %v", err)
+	}
+
+	if !a60.validateAt(testSecret, code60, testBase) {
+		t.Error("adapter period=60 debe validar un código generado con period=60")
+	}
+	if a60.validateAt(testSecret, code30, testBase) {
+		t.Error("adapter period=60 no debe validar un código de period=30 (el período viene del struct)")
+	}
+}
+
+func TestValidatePublicRoundTrip(t *testing.T) {
+	a := newTestAdapter(t)
+
+	cfg, err := a.Config("MiApp", "user@mail.com")
+	if err != nil {
+		t.Fatalf("Config devolvió error: %v", err)
+	}
+
+	code, err := totp.GenerateCode(cfg.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	if !a.Validate(cfg.Secret, code) {
+		t.Error("Validate debería aceptar un código generado para el momento actual")
+	}
+	if a.Validate(cfg.Secret, "000000") {
+		t.Error("Validate no debería aceptar un código inválido")
 	}
 }
