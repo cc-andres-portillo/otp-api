@@ -6,6 +6,16 @@ import (
 	"net/http"
 )
 
+type setup2FABody struct {
+	Issuer string `json:"issuer"`
+}
+
+type Setup2FADTO struct {
+	Secret string `json:"secret"`
+	// Url     string `json:"qr"`
+	QRImg []byte `json:"qr"`
+}
+
 func (h *accountSecurityHandler) Setup2FA(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("tk-session")
 	if err != nil {
@@ -17,16 +27,13 @@ func (h *accountSecurityHandler) Setup2FA(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req struct {
-		Issuer string `json:"issuer"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var body setup2FABody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 
-	if req.Issuer == "" {
+	if body.Issuer == "" {
 		writeError(w, http.StatusBadRequest, "JSON issuer field is required")
 		return
 	}
@@ -37,18 +44,15 @@ func (h *accountSecurityHandler) Setup2FA(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	secret, _, qrImg, err := h.Application.CreateTwoFA(r.Context(), user.ID, user.Email, req.Issuer)
+	secret, _, qrImg, err := h.Application.CreateTwoFA(r.Context(), user.ID, user.Email, body.Issuer)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Error generando clave OTP")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, struct {
-		Secret string `json:"secret"`
-		// QR     string `json:"qr"`
-		QRImg []byte `json:"qr"`
-	}{
+	writeJSON(w, http.StatusOK, Setup2FADTO{
 		Secret: secret,
 		QRImg:  qrImg,
+		// Url:    url,
 	})
 }

@@ -2,14 +2,14 @@ package auth_security_libs
 
 import (
 	"bytes"
-	"errors"
+	"fmt"
 	"image/png"
 	"time"
 
 	pquerna_otp "github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 
-	account_security_ports "github.com/cc-andres-portillo/otp-api/internal/core/account_security/ports"
+	otp_adapter_ports "github.com/cc-andres-portillo/otp-api/internal/core/account_security/ports"
 )
 
 type otpAdapter struct {
@@ -18,7 +18,7 @@ type otpAdapter struct {
 	algorithm                pquerna_otp.Algorithm
 }
 
-func New(period uint) account_security_ports.OTPAdapterPort {
+func New(period uint) otp_adapter_ports.OTPAdapterPort {
 	if period == 0 {
 		return otpDisableAdapter{}
 	}
@@ -35,7 +35,7 @@ func (o otpAdapter) IsEnabled() bool {
 	return true
 }
 
-func (o otpAdapter) Config(issuer, accountName string) (string, string, []byte, error) {
+func (o otpAdapter) Config(issuer, accountName string) (otp_adapter_ports.OTPConfig, error) {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
 		AccountName: accountName,
@@ -45,19 +45,23 @@ func (o otpAdapter) Config(issuer, accountName string) (string, string, []byte, 
 		SecretSize:  o.secretSize,
 	})
 	if err != nil {
-		return "", "", nil, errors.New("Error generando clave OTP")
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("error generando clave OTP: %w", err)
 	}
 
 	var buf bytes.Buffer
 	img, err := key.Image(200, 200)
 	if err != nil {
-		return "", "", nil, err
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("generando imagen qr: %w", err)
 	}
 	if err := png.Encode(&buf, img); err != nil {
-		return "", "", nil, err
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("codificando png: %w", err)
 	}
 
-	return key.Secret(), key.URL(), buf.Bytes(), nil
+	return otp_adapter_ports.OTPConfig{
+		Secret: key.Secret(),
+		URL:    key.URL(),
+		QRImg:  buf.Bytes(),
+	}, nil
 }
 
 func (o otpAdapter) Validate(secret, token string) bool {
