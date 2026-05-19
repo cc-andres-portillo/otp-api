@@ -64,12 +64,16 @@ func (o otpAdapter) Config(issuer, accountName string) (otp_adapter_ports.OTPCon
 	}, nil
 }
 
-func (o otpAdapter) Validate(secret, token string) bool {
-	valid, err := totp.ValidateCustom(token, secret, time.Now().UTC(), totp.ValidateOpts{
+func (o otpAdapter) validateAt(secret, token string, t time.Time) bool {
+	valid, err := totp.ValidateCustom(token, secret, t, totp.ValidateOpts{
 		Period:    o.period,
 		Skew:      o.skew,
 		Digits:    o.digits,
 		Algorithm: o.algorithm,
 	})
 	return err == nil && valid
+}
+
+func (o otpAdapter) Validate(secret, token string) bool {
+	return o.validateAt(secret, token, time.Now().UTC())
 }
