@@ -2,6 +2,7 @@ package auth_security_libs
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image/png"
 	"time"
@@ -10,6 +11,15 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	otp_adapter_ports "github.com/cc-andres-portillo/otp-api/internal/core/account_security/ports"
+)
+
+// Errores del adaptador como keys estables: los consumidores pueden matchearlos con
+// errors.Is(err, ErrXxx) y mapearlos a una respuesta. La causa raíz se conserva como
+// contexto vía %v en el wrap.
+var (
+	ErrOTPKeyGeneration  = errors.New("OTP_KEY_GENERATION_FAILED")
+	ErrQRImageGeneration = errors.New("QR_IMAGE_GENERATION_FAILED")
+	ErrPNGEncoding       = errors.New("PNG_ENCODING_FAILED")
 )
 
 type otpAdapter struct {
@@ -45,16 +55,16 @@ func (o otpAdapter) Config(issuer, accountName string) (otp_adapter_ports.OTPCon
 		SecretSize:  o.secretSize,
 	})
 	if err != nil {
-		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("error generando clave OTP: %w", err)
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("%w: %v", ErrOTPKeyGeneration, err)
 	}
 
 	var buf bytes.Buffer
 	img, err := key.Image(200, 200)
 	if err != nil {
-		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("generando imagen qr: %w", err)
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("%w: %v", ErrQRImageGeneration, err)
 	}
 	if err := png.Encode(&buf, img); err != nil {
-		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("codificando png: %w", err)
+		return otp_adapter_ports.OTPConfig{}, fmt.Errorf("%w: %v", ErrPNGEncoding, err)
 	}
 
 	return otp_adapter_ports.OTPConfig{

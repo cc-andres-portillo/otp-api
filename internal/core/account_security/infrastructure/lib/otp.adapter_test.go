@@ -2,6 +2,7 @@ package auth_security_libs
 
 import (
 	"bytes"
+	"errors"
 	"image/png"
 	"testing"
 	"time"
@@ -113,8 +114,12 @@ func TestValidateWindowSkew(t *testing.T) {
 func TestConfigEmptyArgs(t *testing.T) {
 	a := newTestAdapter(t)
 
-	if _, err := a.Config("", ""); err == nil {
-		t.Error(`Config("", "") debería devolver error`)
+	_, err := a.Config("", "")
+	if err == nil {
+		t.Fatal(`Config("", "") debería devolver error`)
+	}
+	if !errors.Is(err, ErrOTPKeyGeneration) {
+		t.Errorf("el error debería matchear ErrOTPKeyGeneration, got %v", err)
 	}
 }
 
